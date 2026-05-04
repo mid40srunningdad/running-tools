@@ -375,18 +375,34 @@ function FuelCalculator({ units }) {
   }, [distance, customDist, units]);
 
   // Carb target g/hr based on duration + intensity
-  // Tuned to real-world amateur racing: half marathon at race effort = ~3 gels
+  // At race effort, anything 75+ min needs proper fuelling
+  // The "optional" zone only applies to lower intensities
   const carbTarget = useMemo(() => {
-    if (totalMinutes < 60) return 0; // not really needed
+    if (totalMinutes < 60) return 0;
     let target;
-    if (totalMinutes < 75) target = 25; // optional fuel zone
-    else if (totalMinutes < 120) target = intensity === "hard" ? 45 : intensity === "moderate" ? 35 : 25;
-    else if (totalMinutes < 180) target = intensity === "hard" ? 65 : intensity === "moderate" ? 55 : 45;
-    else target = intensity === "hard" ? 80 : intensity === "moderate" ? 70 : 60;
+    if (totalMinutes < 75) {
+      // Sub-75min: optional even at race effort
+      target = intensity === "hard" ? 30 : 20;
+    } else if (totalMinutes < 180) {
+      // 75min-3hr: half marathon zone
+      target = intensity === "hard" ? 45 : intensity === "moderate" ? 35 : 25;
+    } else if (totalMinutes < 240) {
+      // 3-4hr: marathon zone
+      target = intensity === "hard" ? 50 : intensity === "moderate" ? 40 : 30;
+    } else {
+      // 4hr+: slow marathon / ultra
+      target = intensity === "hard" ? 55 : intensity === "moderate" ? 45 : 35;
+    }
     return target;
   }, [totalMinutes, intensity]);
 
-  const totalCarbs = (carbTarget * totalMinutes) / 60;
+  const totalCarbs = useMemo(() => {
+    const raw = (carbTarget * totalMinutes) / 60;
+    // Apply realistic caps - in practice, no one takes more than ~3 gels for a half or ~7-8 for a marathon
+    if (totalMinutes < 180) return Math.min(raw, 75);   // Half cap: ~75g (3 SiS Iso / 3 Maurten 100 / 2 Beta Fuel)
+    if (totalMinutes < 240) return Math.min(raw, 180);  // Marathon cap: ~180g (8 SiS Iso / 5 Beta Fuel)
+    return Math.min(raw, 220);                           // Slow marathon / ultra cap
+  }, [carbTarget, totalMinutes]);
 
   const gelOptions = {
     sis_iso: { name: "SiS GO Isotonic", g: 22 },
@@ -555,6 +571,7 @@ function FuelCalculator({ units }) {
                 <div className="mono text-xs uppercase tracking-widest text-stone-400 mb-2">Notes</div>
                 <ul className="text-sm leading-relaxed text-stone-300 space-y-1.5">
                   <li>• Pair each gel with a few sips of water (not isotonic-only).</li>
+                  <li>• If using sports drinks at aid stations, you can take 1-2 fewer gels.</li>
                   <li>• Practice this exact plan on at least one long run.</li>
                   <li>• If using caffeine gels, avoid the very first one.</li>
                   {totalMinutes >= 180 && <li>• For 3hr+ efforts, consider mixing gel types to reduce GI risk.</li>}
